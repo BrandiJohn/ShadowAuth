@@ -30,136 +30,131 @@ describe("ShadowAuth", function () {
     await shadowAuth.waitForDeployment();
   });
 
-  describe("Account Creation", function () {
-    it("Should create a single-sig account", async function () {
-      // Create encrypted input for single signer
+  describe("User Registration", function () {
+    it("Should register a user with encrypted multi-sig addresses", async function () {
+      // Create encrypted input for 3 multi-sig addresses
       const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      input.addAddress(bobAddress);      // signer1
-      input.addAddress(ethers.ZeroAddress); // signer2 (unused)
-      input.addAddress(ethers.ZeroAddress); // signer3 (unused)
-      input.add8(1); // signerCount = 1
+      input.addAddress(bobAddress);     // signer1
+      input.addAddress(charlieAddress); // signer2  
+      input.addAddress(davidAddress);   // signer3
       const encryptedInput = await input.encrypt();
 
-      // Create account
+      // Register user
       await expect(
-        shadowAuth.connect(alice).createAccount(
+        shadowAuth.connect(alice).register(
           encryptedInput.handles[0], // encryptedSigner1
           encryptedInput.handles[1], // encryptedSigner2
           encryptedInput.handles[2], // encryptedSigner3
-          encryptedInput.handles[3], // signerCount
           encryptedInput.inputProof
         )
-      ).to.emit(shadowAuth, "AccountCreated").withArgs(aliceAddress, 0);
+      ).to.emit(shadowAuth, "UserRegistered").withArgs(aliceAddress);
 
-      // Check account exists
-      expect(await shadowAuth.accountExists(aliceAddress)).to.be.true;
+      // Check user is registered
+      expect(await shadowAuth.isUserRegistered(aliceAddress)).to.be.true;
     });
 
-    it("Should create a multi-sig account with 3 signers", async function () {
-      // Create encrypted input for 3 signers
-      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      input.addAddress(bobAddress);     // signer1
-      input.addAddress(charlieAddress); // signer2
-      input.addAddress(davidAddress);   // signer3
-      input.add8(3); // signerCount = 3
-      const encryptedInput = await input.encrypt();
-
-      // Create account
-      await shadowAuth.connect(alice).createAccount(
-        encryptedInput.handles[0],
-        encryptedInput.handles[1],
-        encryptedInput.handles[2],
-        encryptedInput.handles[3],
-        encryptedInput.inputProof
-      );
-
-      // Check account exists
-      expect(await shadowAuth.accountExists(aliceAddress)).to.be.true;
-
-      // Verify signer count
-      const signerCount = await shadowAuth.connect(alice).getSignerCount();
-      expect(signerCount).to.not.be.null;
-    });
-
-    it("Should not create account with invalid signer count", async function () {
-      // Create encrypted input with invalid signer count
-      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      input.addAddress(bobAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.add8(5); // Invalid signer count
-      const encryptedInput = await input.encrypt();
-
-      // Try to create account - should not revert but set error
-      await shadowAuth.connect(alice).createAccount(
-        encryptedInput.handles[0],
-        encryptedInput.handles[1],
-        encryptedInput.handles[2],
-        encryptedInput.handles[3],
-        encryptedInput.inputProof
-      );
-
-      // Check error was set (we can't decrypt the error in tests easily, but account should still exist)
-      expect(await shadowAuth.accountExists(aliceAddress)).to.be.true;
-    });
-
-    it("Should not create duplicate accounts", async function () {
-      // Create first account
+    it("Should not register duplicate users", async function () {
+      // Register user first time
       const input1 = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
       input1.addAddress(bobAddress);
-      input1.addAddress(ethers.ZeroAddress);
-      input1.addAddress(ethers.ZeroAddress);
-      input1.add8(1);
+      input1.addAddress(charlieAddress);
+      input1.addAddress(davidAddress);
       const encryptedInput1 = await input1.encrypt();
 
-      await shadowAuth.connect(alice).createAccount(
+      await shadowAuth.connect(alice).register(
         encryptedInput1.handles[0],
         encryptedInput1.handles[1],
         encryptedInput1.handles[2],
-        encryptedInput1.handles[3],
         encryptedInput1.inputProof
       );
 
-      // Try to create second account - should revert
+      // Try to register again - should revert
       const input2 = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
+      input2.addAddress(bobAddress);
       input2.addAddress(charlieAddress);
-      input2.addAddress(ethers.ZeroAddress);
-      input2.addAddress(ethers.ZeroAddress);
-      input2.add8(1);
+      input2.addAddress(davidAddress);
       const encryptedInput2 = await input2.encrypt();
 
       await expect(
-        shadowAuth.connect(alice).createAccount(
+        shadowAuth.connect(alice).register(
           encryptedInput2.handles[0],
           encryptedInput2.handles[1],
           encryptedInput2.handles[2],
-          encryptedInput2.handles[3],
           encryptedInput2.inputProof
         )
-      ).to.be.revertedWith("Account already exists");
+      ).to.be.revertedWithCustomError(shadowAuth, "AlreadyRegistered");
+    });
+
+    it("Should allow getting encrypted multi-sig addresses", async function () {
+      // Register user
+      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
+      input.addAddress(bobAddress);
+      input.addAddress(charlieAddress);
+      input.addAddress(davidAddress);
+      const encryptedInput = await input.encrypt();
+
+      await shadowAuth.connect(alice).register(
+        encryptedInput.handles[0],
+        encryptedInput.handles[1],
+        encryptedInput.handles[2],
+        encryptedInput.inputProof
+      );
+
+      // Get multi-sig addresses
+      const signer0 = await shadowAuth.getMultiSigAddress(aliceAddress, 0);
+      const signer1 = await shadowAuth.getMultiSigAddress(aliceAddress, 1);
+      const signer2 = await shadowAuth.getMultiSigAddress(aliceAddress, 2);
+
+      expect(signer0).to.not.be.null;
+      expect(signer1).to.not.be.null;
+      expect(signer2).to.not.be.null;
+    });
+
+    it("Should revert when getting multi-sig address for unregistered user", async function () {
+      await expect(
+        shadowAuth.getMultiSigAddress(bobAddress, 0)
+      ).to.be.revertedWithCustomError(shadowAuth, "NotRegistered");
+    });
+
+    it("Should revert with invalid signer index", async function () {
+      // Register user first
+      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
+      input.addAddress(bobAddress);
+      input.addAddress(charlieAddress);
+      input.addAddress(davidAddress);
+      const encryptedInput = await input.encrypt();
+
+      await shadowAuth.connect(alice).register(
+        encryptedInput.handles[0],
+        encryptedInput.handles[1],
+        encryptedInput.handles[2],
+        encryptedInput.inputProof
+      );
+
+      await expect(
+        shadowAuth.getMultiSigAddress(aliceAddress, 3)
+      ).to.be.revertedWithCustomError(shadowAuth, "InvalidSignerIndex");
     });
   });
 
   describe("Deposits", function () {
     beforeEach(async function () {
-      // Create account first
+      // Register user first
       const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
       input.addAddress(bobAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.add8(1);
+      input.addAddress(charlieAddress);
+      input.addAddress(davidAddress);
       const encryptedInput = await input.encrypt();
 
-      await shadowAuth.connect(alice).createAccount(
+      await shadowAuth.connect(alice).register(
         encryptedInput.handles[0],
         encryptedInput.handles[1],
         encryptedInput.handles[2],
-        encryptedInput.handles[3],
         encryptedInput.inputProof
       );
     });
 
-    it("Should allow deposits", async function () {
+    it("Should allow deposits from registered users", async function () {
       const depositAmount = ethers.parseEther("1.0");
 
       await expect(
@@ -167,16 +162,16 @@ describe("ShadowAuth", function () {
       ).to.emit(shadowAuth, "Deposit").withArgs(aliceAddress, depositAmount);
 
       // Balance should be updated (encrypted)
-      const balance = await shadowAuth.connect(alice).getBalance();
+      const balance = await shadowAuth.getBalance(aliceAddress);
       expect(balance).to.not.be.null;
     });
 
-    it("Should not allow deposits to non-existent accounts", async function () {
+    it("Should not allow deposits from unregistered users", async function () {
       const depositAmount = ethers.parseEther("1.0");
 
       await expect(
         shadowAuth.connect(bob).deposit({ value: depositAmount })
-      ).to.be.revertedWith("Account does not exist");
+      ).to.be.revertedWithCustomError(shadowAuth, "NotRegistered");
     });
 
     it("Should not allow zero deposits", async function () {
@@ -193,319 +188,287 @@ describe("ShadowAuth", function () {
       await shadowAuth.connect(alice).deposit({ value: deposit2 });
 
       // Balance should be sum of both deposits (encrypted)
-      const balance = await shadowAuth.connect(alice).getBalance();
+      const balance = await shadowAuth.getBalance(aliceAddress);
       expect(balance).to.not.be.null;
     });
   });
 
-  describe("Withdrawal Requests", function () {
-    beforeEach(async function () {
-      // Create account and deposit funds
-      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      input.addAddress(bobAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.add8(1);
-      const encryptedInput = await input.encrypt();
-
-      await shadowAuth.connect(alice).createAccount(
-        encryptedInput.handles[0],
-        encryptedInput.handles[1],
-        encryptedInput.handles[2],
-        encryptedInput.handles[3],
-        encryptedInput.inputProof
-      );
-
-      // Deposit some funds
-      await shadowAuth.connect(alice).deposit({ value: ethers.parseEther("2.0") });
-    });
-
-    it("Should create withdrawal request", async function () {
-      // Create encrypted withdrawal amount
-      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      input.add64(ethers.parseEther("1.0"));
-      const encryptedInput = await input.encrypt();
-
-      await expect(
-        shadowAuth.connect(alice).requestWithdrawal(
-          encryptedInput.handles[0],
-          encryptedInput.inputProof
-        )
-      ).to.emit(shadowAuth, "SignerApprovalRequested").withArgs(aliceAddress, 1);
-
-      // Check withdrawal request exists
-      const [amount, timestamp, executed] = await shadowAuth.getWithdrawalRequest(1);
-      expect(amount).to.not.be.null;
-      expect(timestamp).to.be.greaterThan(0);
-      expect(executed).to.be.false;
-    });
-
-    it("Should not create withdrawal request for non-existent account", async function () {
-      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
-      input.add64(ethers.parseEther("1.0"));
-      const encryptedInput = await input.encrypt();
-
-      await expect(
-        shadowAuth.connect(bob).requestWithdrawal(
-          encryptedInput.handles[0],
-          encryptedInput.inputProof
-        )
-      ).to.be.revertedWith("Account does not exist");
-    });
-  });
-
-  describe("Multi-sig Approval", function () {
-    let withdrawalId: number;
+  describe("Withdrawal Limits", function () {
+    let currentTimestamp: number;
 
     beforeEach(async function () {
-      // Create 2-sig account
+      // Register user
       const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
       input.addAddress(bobAddress);
       input.addAddress(charlieAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.add8(2);
+      input.addAddress(davidAddress);
       const encryptedInput = await input.encrypt();
 
-      await shadowAuth.connect(alice).createAccount(
+      await shadowAuth.connect(alice).register(
         encryptedInput.handles[0],
         encryptedInput.handles[1],
         encryptedInput.handles[2],
-        encryptedInput.handles[3],
         encryptedInput.inputProof
       );
 
       // Deposit funds
       await shadowAuth.connect(alice).deposit({ value: ethers.parseEther("2.0") });
 
-      // Create withdrawal request
-      const withdrawalInput = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      withdrawalInput.add64(ethers.parseEther("1.0"));
-      const withdrawalEncrypted = await withdrawalInput.encrypt();
-
-      await shadowAuth.connect(alice).requestWithdrawal(
-        withdrawalEncrypted.handles[0],
-        withdrawalEncrypted.inputProof
-      );
-
-      withdrawalId = 1;
+      // Get current timestamp
+      const block = await ethers.provider.getBlock("latest");
+      currentTimestamp = block!.timestamp;
     });
 
-    it("Should allow signer to approve withdrawal", async function () {
-      // Bob approves as signer 0
+    it("Should allow multi-sig addresses to set withdrawal limits", async function () {
+      // Bob (signer 0) sets withdrawal limit
       const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
-      input.add8(0); // signer index
+      input.add64(ethers.parseEther("1.0")); // max amount
       const encryptedInput = await input.encrypt();
 
+      const deadline = currentTimestamp + 3600; // 1 hour from now
+
       await expect(
-        shadowAuth.connect(bob).approveWithdrawal(
-          withdrawalId,
+        shadowAuth.connect(bob).setWithdrawalLimit(
+          aliceAddress,
+          0, // signer index
           encryptedInput.handles[0],
+          deadline,
           encryptedInput.inputProof
         )
-      ).to.emit(shadowAuth, "SignerApproved").withArgs(bobAddress, withdrawalId);
+      ).to.emit(shadowAuth, "WithdrawalLimitSet").withArgs(aliceAddress, 0);
 
-      // Check approval status
-      const approval = await shadowAuth.getSignerApproval(withdrawalId, 0);
-      expect(approval).to.not.be.null;
+      // Check withdrawal limit was set
+      const [maxAmount, deadlineStored, isSet] = await shadowAuth.getWithdrawalLimit(aliceAddress, 0);
+      expect(maxAmount).to.not.be.null;
+      expect(deadlineStored).to.equal(deadline);
+      expect(isSet).to.be.true;
     });
 
-    it("Should not allow unauthorized approval", async function () {
-      // David (not a signer) tries to approve
-      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), davidAddress);
-      input.add8(0);
-      const encryptedInput = await input.encrypt();
-
-      // This won't revert but will set error
-      await shadowAuth.connect(david).approveWithdrawal(
-        withdrawalId,
-        encryptedInput.handles[0],
-        encryptedInput.inputProof
-      );
-
-      // Error should be set for unauthorized signer
-      const [error] = await shadowAuth.connect(david).getLastError();
-      expect(error).to.not.be.null;
-    });
-
-    it("Should not allow double approval from same signer", async function () {
-      // Bob approves first time
+    it("Should not allow setting withdrawal limit with past deadline", async function () {
       const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
-      input.add8(0);
+      input.add64(ethers.parseEther("1.0"));
       const encryptedInput = await input.encrypt();
 
-      await shadowAuth.connect(bob).approveWithdrawal(
-        withdrawalId,
-        encryptedInput.handles[0],
-        encryptedInput.inputProof
-      );
-
-      // Bob tries to approve again
-      const input2 = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
-      input2.add8(0);
-      const encryptedInput2 = await input2.encrypt();
+      const pastDeadline = currentTimestamp - 3600; // 1 hour ago
 
       await expect(
-        shadowAuth.connect(bob).approveWithdrawal(
-          withdrawalId,
-          encryptedInput2.handles[0],
-          encryptedInput2.inputProof
+        shadowAuth.connect(bob).setWithdrawalLimit(
+          aliceAddress,
+          0,
+          encryptedInput.handles[0],
+          pastDeadline,
+          encryptedInput.inputProof
         )
-      ).to.be.revertedWith("Signer already approved");
+      ).to.be.revertedWith("Deadline must be in the future");
+    });
+
+    it("Should not allow setting withdrawal limit for unregistered user", async function () {
+      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
+      input.add64(ethers.parseEther("1.0"));
+      const encryptedInput = await input.encrypt();
+
+      const deadline = currentTimestamp + 3600;
+
+      await expect(
+        shadowAuth.connect(bob).setWithdrawalLimit(
+          davidAddress, // unregistered user
+          0,
+          encryptedInput.handles[0],
+          deadline,
+          encryptedInput.inputProof
+        )
+      ).to.be.revertedWithCustomError(shadowAuth, "NotRegistered");
+    });
+
+    it("Should revert with invalid signer index", async function () {
+      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
+      input.add64(ethers.parseEther("1.0"));
+      const encryptedInput = await input.encrypt();
+
+      const deadline = currentTimestamp + 3600;
+
+      await expect(
+        shadowAuth.connect(bob).setWithdrawalLimit(
+          aliceAddress,
+          3, // invalid index
+          encryptedInput.handles[0],
+          deadline,
+          encryptedInput.inputProof
+        )
+      ).to.be.revertedWithCustomError(shadowAuth, "InvalidSignerIndex");
     });
   });
 
-  describe("Withdrawal Execution", function () {
-    let withdrawalId: number;
+  describe("Withdrawals", function () {
+    let currentTimestamp: number;
 
     beforeEach(async function () {
-      // Create single-sig account
+      // Register user
       const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
       input.addAddress(bobAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.add8(1);
+      input.addAddress(charlieAddress);
+      input.addAddress(davidAddress);
       const encryptedInput = await input.encrypt();
 
-      await shadowAuth.connect(alice).createAccount(
+      await shadowAuth.connect(alice).register(
         encryptedInput.handles[0],
         encryptedInput.handles[1],
         encryptedInput.handles[2],
-        encryptedInput.handles[3],
         encryptedInput.inputProof
       );
 
       // Deposit funds
-      await shadowAuth.connect(alice).deposit({ value: ethers.parseEther("2.0") });
+      await shadowAuth.connect(alice).deposit({ value: ethers.parseEther("5.0") });
 
-      // Create withdrawal request
-      const withdrawalInput = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      withdrawalInput.add64(ethers.parseEther("1.0"));
-      const withdrawalEncrypted = await withdrawalInput.encrypt();
+      // Get current timestamp
+      const block = await ethers.provider.getBlock("latest");
+      currentTimestamp = block!.timestamp;
+    });
 
-      await shadowAuth.connect(alice).requestWithdrawal(
-        withdrawalEncrypted.handles[0],
-        withdrawalEncrypted.inputProof
+    it("Should allow withdrawal when all multi-sig limits are set", async function () {
+      const withdrawAmount = ethers.parseEther("1.0");
+      const deadline = currentTimestamp + 3600;
+
+      // All three signers set withdrawal limits
+      for (let i = 0; i < 3; i++) {
+        const signer = [bob, charlie, david][i];
+        const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), await signer.getAddress());
+        input.add64(ethers.parseEther("2.0")); // max amount higher than withdraw amount
+        const encryptedInput = await input.encrypt();
+
+        await shadowAuth.connect(signer).setWithdrawalLimit(
+          aliceAddress,
+          i,
+          encryptedInput.handles[0],
+          deadline,
+          encryptedInput.inputProof
+        );
+      }
+
+      // Now Alice can withdraw
+      const withdrawInput = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
+      withdrawInput.add64(withdrawAmount);
+      const withdrawEncrypted = await withdrawInput.encrypt();
+
+      await expect(
+        shadowAuth.connect(alice).withdraw(
+          withdrawEncrypted.handles[0],
+          withdrawEncrypted.inputProof
+        )
+      ).to.emit(shadowAuth, "Withdrawal").withArgs(aliceAddress, 0); // Amount is encrypted
+
+      // Check withdrawal limits are cleared
+      for (let i = 0; i < 3; i++) {
+        const [, , isSet] = await shadowAuth.getWithdrawalLimit(aliceAddress, i);
+        expect(isSet).to.be.false;
+      }
+    });
+
+    it("Should not allow withdrawal without all multi-sig limits set", async function () {
+      const withdrawAmount = ethers.parseEther("1.0");
+      const deadline = currentTimestamp + 3600;
+
+      // Only set limit for first signer
+      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
+      input.add64(ethers.parseEther("2.0"));
+      const encryptedInput = await input.encrypt();
+
+      await shadowAuth.connect(bob).setWithdrawalLimit(
+        aliceAddress,
+        0,
+        encryptedInput.handles[0],
+        deadline,
+        encryptedInput.inputProof
       );
 
-      withdrawalId = 1;
+      // Try to withdraw - should not revert but won't transfer
+      const withdrawInput = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
+      withdrawInput.add64(withdrawAmount);
+      const withdrawEncrypted = await withdrawInput.encrypt();
 
-      // Approve withdrawal
-      const approvalInput = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
-      approvalInput.add8(0);
-      const approvalEncrypted = await approvalInput.encrypt();
-
-      await shadowAuth.connect(bob).approveWithdrawal(
-        withdrawalId,
-        approvalEncrypted.handles[0],
-        approvalEncrypted.inputProof
-      );
-    });
-
-    it("Should execute withdrawal after approval", async function () {
       await expect(
-        shadowAuth.connect(alice).executeWithdrawal(withdrawalId)
-      ).to.emit(shadowAuth, "WithdrawalExecuted").withArgs(aliceAddress, withdrawalId, 0);
-
-      // Check withdrawal is marked as executed
-      const [, , executed] = await shadowAuth.getWithdrawalRequest(withdrawalId);
-      expect(executed).to.be.true;
+        shadowAuth.connect(alice).withdraw(
+          withdrawEncrypted.handles[0],
+          withdrawEncrypted.inputProof
+        )
+      ).to.be.revertedWith("All multi-sig limits must be set and valid");
     });
 
-    it("Should not execute withdrawal without approval", async function () {
-      // Create another withdrawal request
-      const withdrawalInput = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
-      withdrawalInput.add64(ethers.parseEther("0.5"));
-      const withdrawalEncrypted = await withdrawalInput.encrypt();
+    it("Should not allow withdrawal from unregistered user", async function () {
+      const withdrawAmount = ethers.parseEther("1.0");
 
-      await shadowAuth.connect(alice).requestWithdrawal(
-        withdrawalEncrypted.handles[0],
-        withdrawalEncrypted.inputProof
-      );
+      const withdrawInput = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
+      withdrawInput.add64(withdrawAmount);
+      const withdrawEncrypted = await withdrawInput.encrypt();
 
-      const newWithdrawalId = 2;
-
-      // Try to execute without approval - won't revert but will set error
-      await shadowAuth.connect(alice).executeWithdrawal(newWithdrawalId);
-
-      // Error should be set
-      const [error] = await shadowAuth.connect(alice).getLastError();
-      expect(error).to.not.be.null;
-    });
-
-    it("Should not allow non-requester to execute withdrawal", async function () {
       await expect(
-        shadowAuth.connect(bob).executeWithdrawal(withdrawalId)
-      ).to.be.revertedWith("Only requester can execute withdrawal");
+        shadowAuth.connect(bob).withdraw(
+          withdrawEncrypted.handles[0],
+          withdrawEncrypted.inputProof
+        )
+      ).to.be.revertedWithCustomError(shadowAuth, "NotRegistered");
     });
 
-    it("Should not execute already executed withdrawal", async function () {
-      // Execute first time
-      await shadowAuth.connect(alice).executeWithdrawal(withdrawalId);
+    it("Should not allow withdrawal with expired deadlines", async function () {
+      const withdrawAmount = ethers.parseEther("1.0");
+      const pastDeadline = currentTimestamp - 3600; // 1 hour ago
 
-      // Try to execute again
+      // Try to set withdrawal limit with past deadline (should fail)
+      const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), bobAddress);
+      input.add64(ethers.parseEther("2.0"));
+      const encryptedInput = await input.encrypt();
+
       await expect(
-        shadowAuth.connect(alice).executeWithdrawal(withdrawalId)
-      ).to.be.revertedWith("Withdrawal already executed");
+        shadowAuth.connect(bob).setWithdrawalLimit(
+          aliceAddress,
+          0,
+          encryptedInput.handles[0],
+          pastDeadline,
+          encryptedInput.inputProof
+        )
+      ).to.be.revertedWith("Deadline must be in the future");
     });
   });
 
   describe("View Functions", function () {
     beforeEach(async function () {
-      // Create account
+      // Register user
       const input = fhevm.createEncryptedInput(await shadowAuth.getAddress(), aliceAddress);
       input.addAddress(bobAddress);
       input.addAddress(charlieAddress);
-      input.addAddress(ethers.ZeroAddress);
-      input.add8(2);
+      input.addAddress(davidAddress);
       const encryptedInput = await input.encrypt();
 
-      await shadowAuth.connect(alice).createAccount(
+      await shadowAuth.connect(alice).register(
         encryptedInput.handles[0],
         encryptedInput.handles[1],
         encryptedInput.handles[2],
-        encryptedInput.handles[3],
         encryptedInput.inputProof
       );
     });
 
-    it("Should return encrypted balance", async function () {
-      const balance = await shadowAuth.connect(alice).getBalance();
+    it("Should return encrypted balance for registered user", async function () {
+      const balance = await shadowAuth.getBalance(aliceAddress);
       expect(balance).to.not.be.null;
     });
 
-    it("Should return encrypted signer count", async function () {
-      const signerCount = await shadowAuth.connect(alice).getSignerCount();
-      expect(signerCount).to.not.be.null;
+    it("Should return registration status", async function () {
+      expect(await shadowAuth.isUserRegistered(aliceAddress)).to.be.true;
+      expect(await shadowAuth.isUserRegistered(bobAddress)).to.be.false;
     });
 
-    it("Should return encrypted signer addresses", async function () {
-      const signer0 = await shadowAuth.connect(alice).getEncryptedSigner(0);
-      const signer1 = await shadowAuth.connect(alice).getEncryptedSigner(1);
-      const signer2 = await shadowAuth.connect(alice).getEncryptedSigner(2);
-      
-      expect(signer0).to.not.be.null;
-      expect(signer1).to.not.be.null;
-      expect(signer2).to.not.be.null;
+    it("Should return withdrawal limit info", async function () {
+      // Initially no limits set
+      const [maxAmount, deadline, isSet] = await shadowAuth.getWithdrawalLimit(aliceAddress, 0);
+      expect(maxAmount).to.not.be.null;
+      expect(deadline).to.equal(0);
+      expect(isSet).to.be.false;
     });
 
-    it("Should not return data for non-existent accounts", async function () {
+    it("Should revert for invalid withdrawal limit signer index", async function () {
       await expect(
-        shadowAuth.connect(bob).getBalance()
-      ).to.be.revertedWith("Account does not exist");
-
-      await expect(
-        shadowAuth.connect(bob).getSignerCount()
-      ).to.be.revertedWith("Account does not exist");
-
-      await expect(
-        shadowAuth.connect(bob).getEncryptedSigner(0)
-      ).to.be.revertedWith("Account does not exist");
-    });
-
-    it("Should revert for invalid signer index", async function () {
-      await expect(
-        shadowAuth.connect(alice).getEncryptedSigner(3)
-      ).to.be.revertedWith("Invalid signer index");
+        shadowAuth.getWithdrawalLimit(aliceAddress, 3)
+      ).to.be.revertedWithCustomError(shadowAuth, "InvalidSignerIndex");
     });
   });
 });
