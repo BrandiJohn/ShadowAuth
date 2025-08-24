@@ -11,6 +11,7 @@ import "solidity-coverage";
 
 import "./tasks/accounts";
 import "./tasks/FHECounter";
+import "./tasks/ShadowAuth";
 
 // Run 'npx hardhat vars setup' to see the list of variables that need to be set
 
@@ -78,6 +79,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 800,
       },
+      viaIR: true,
       evmVersion: "cancun",
     },
   },
