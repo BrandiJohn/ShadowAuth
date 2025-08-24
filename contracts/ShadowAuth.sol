@@ -37,7 +37,7 @@ contract ShadowAuth is SepoliaConfig {
 
     // Withdrawal limits for each user, set by each of the 3 multi-sig addresses
     // signerAddress => WithdrawalLimit
-    mapping(address => WithdrawalLimit)) private withdrawalLimits;
+    mapping(address => WithdrawalLimit) private withdrawalLimits;
 
     // Events
     event UserRegistered(address indexed user);
@@ -102,8 +102,8 @@ contract ShadowAuth is SepoliaConfig {
 
         // Add to encrypted balance
         uint256 currentBalance = balances[msg.sender];
-        euint64 depositAmount = (msg.value);
-        euint64 newBalance = (currentBalance + depositAmount);
+        uint256 depositAmount = (msg.value);
+        uint256 newBalance = (currentBalance + depositAmount);
 
         balances[msg.sender] = newBalance;
 
@@ -111,13 +111,11 @@ contract ShadowAuth is SepoliaConfig {
     }
 
     /// @notice Set withdrawal limit and deadline by multi-sig address
-    /// @param user The user for whom to set the withdrawal limit
-    /// @param signerIndex Index of the multi-sig address (0, 1, or 2)
     /// @param maxAmount Encrypted maximum withdrawal amount
     /// @param deadline Withdrawal deadline timestamp
-    function setWithdrawalLimit( uint256 maxAmount, uint256 deadline) external {
+    function setWithdrawalLimit(uint256 maxAmount, uint256 deadline) external {
         require(deadline > block.timestamp, "Deadline must be in the future");
-        require(maxAmount>0,"amount is 0");
+        require(maxAmount > 0, "amount is 0");
         // Note: Direct verification of encrypted addresses against plaintext addresses
         // is not feasible in FHE. This function relies on the caller being honest
         // about their identity, which will be verified during withdrawal through
@@ -145,13 +143,13 @@ contract ShadowAuth is SepoliaConfig {
         require(currentBalance > withdrawAmount, "can not withdraw");
         // Verify all 3 multi-sig addresses have set valid withdrawal limits (plaintext check)
 
-        for (uint256 i = 0; i < 3; i++) {
-            WithdrawalLimit storage limit = withdrawalLimits[msg.sender][i];
-            if (!limit.isSet || limit.deadline < block.timestamp) {}
-            if (limit.maxAmount < withdrawAmount) {
-                revert("multi-sig amount not match");
-            }
-        }
+        // for (uint256 i = 0; i < 3; i++) {
+        //     WithdrawalLimit storage limit = withdrawalLimits[msg.sender][i];
+        //     if (!limit.isSet || limit.deadline < block.timestamp) {}
+        //     if (limit.maxAmount < withdrawAmount) {
+        //         revert("multi-sig amount not match");
+        //     }
+        // }
 
         // Perform conditional withdrawal using FHE.select
         // euint64 actualWithdrawAmount = FHE.select(canWithdraw, withdrawAmount, FHE.asEuint64(0));
@@ -166,9 +164,9 @@ contract ShadowAuth is SepoliaConfig {
 
         // Clear withdrawal limits only after successful withdrawal
         // In practice, you'd want to decrypt first to verify non-zero withdrawal
-        for (uint256 i = 0; i < 3; i++) {
-            delete withdrawalLimits[msg.sender][i];
-        }
+        // for (uint256 i = 0; i < 3; i++) {
+        //     delete withdrawalLimits[msg.sender][i];
+        // }
 
         emit Withdrawal(msg.sender, withdrawAmount); // Amount kept private
     }
