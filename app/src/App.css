@@ -1,0 +1,302 @@
+.app {
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid #333;
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  margin: 0;
+  color: #646cff;
+}
+
+.header p {
+  margin: 0;
+  color: #888;
+}
+
+.loading {
+  text-align: center;
+  padding: 4rem;
+}
+
+.connect-prompt {
+  text-align: center;
+  padding: 4rem;
+}
+
+.main {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid #333;
+  padding-bottom: 1rem;
+}
+
+.nav button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #333;
+  background: transparent;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav button:hover {
+  background: #333;
+}
+
+.nav button.active {
+  background: #646cff;
+  border-color: #646cff;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Registration Component */
+.registration-form, .registration-success {
+  padding: 2rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+}
+
+.registration-success {
+  background: #0a3a0a;
+  border-color: #4ade80;
+}
+
+.registration-success h3 {
+  color: #4ade80;
+  margin-top: 0;
+}
+
+.input-group {
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #ccc;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: white;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #646cff;
+}
+
+.input-group input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.register-button, .action-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  background: #646cff;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  width: 100%;
+}
+
+.register-button:hover, .action-button:hover {
+  background: #5a5fcf;
+}
+
+.register-button:disabled, .action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #ef4444;
+  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  border-radius: 4px;
+  margin-top: 1rem;
+}
+
+/* Dashboard Component */
+.dashboard {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.dashboard h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 1rem 0;
+}
+
+.dashboard-inactive {
+  padding: 2rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  text-align: center;
+}
+
+.balance-card, .action-card {
+  padding: 2rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+}
+
+.balance-amount {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #4ade80;
+  margin-top: 1rem;
+}
+
+.deposit-button {
+  background: #4ade80;
+}
+
+.deposit-button:hover {
+  background: #3ade70;
+}
+
+.withdraw-button {
+  background: #f59e0b;
+}
+
+.withdraw-button:hover {
+  background: #d97706;
+}
+
+.execute-button {
+  background: #10b981;
+}
+
+.execute-button:hover {
+  background: #059669;
+}
+
+.withdrawal-request-status {
+  text-align: left;
+}
+
+.status-pending {
+  color: #f59e0b;
+}
+
+.status-approved {
+  color: #4ade80;
+}
+
+.status-rejected {
+  color: #ef4444;
+}
+
+.success-message {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid #4ade80;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+/* Multisig Manager Component */
+.multisig-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.current-limit-card, .no-limit-card, .set-limit-card, .info-card {
+  padding: 2rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+}
+
+.current-limit-card {
+  background: #0a2a0a;
+  border-color: #4ade80;
+}
+
+.limit-details {
+  text-align: left;
+  margin-top: 1rem;
+}
+
+.limit-details p {
+  margin: 0.5rem 0;
+}
+
+.status-active {
+  color: #4ade80;
+}
+
+.status-expired {
+  color: #ef4444;
+}
+
+.set-limit-button {
+  background: #8b5cf6;
+}
+
+.set-limit-button:hover {
+  background: #7c3aed;
+}
+
+.info-card ul {
+  text-align: left;
+  padding-left: 1rem;
+}
+
+.info-card li {
+  margin: 0.5rem 0;
+  color: #ccc;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .nav {
+    flex-direction: column;
+  }
+
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+}

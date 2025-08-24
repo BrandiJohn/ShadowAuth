@@ -1,184 +1,265 @@
-import React, { useState, useEffect } from 'react';
-import { Contract, formatEther } from 'ethers';
-import { User } from '../types';
+import { useState, useEffect } from 'react'
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { parseEther, formatEther } from 'viem'
+import { SHADOWAUTH_ADDRESS, SHADOWAUTH_ABI } from '../contract'
 
-interface DashboardProps {
-  user: User;
-  contract: Contract | null;
+interface Props {
+  address: string
 }
 
-interface LimitInfo {
-  signerIndex: number;
-  maxAmount: string;
-  deadline: number;
-  isSet: boolean;
+interface WithdrawalRequest {
+  amount: bigint
+  requestId: bigint
+  isPending: boolean
+  canWithdraw: boolean
+  isProcessed: boolean
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ user, contract }) => {
-  const [limits, setLimits] = useState<LimitInfo[]>([]);
-  const [loading, setLoading] = useState(false);
+export default function Dashboard({ address }: Props) {
+  const [depositAmount, setDepositAmount] = useState('')
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawalRequest, setWithdrawalRequest] = useState<WithdrawalRequest | null>(null)
+
+  const { writeContract: writeDeposit, data: depositHash, isPending: isDepositPending } = useWriteContract()
+  const { writeContract: writeWithdrawRequest, data: withdrawRequestHash, isPending: isWithdrawRequestPending } = useWriteContract()
+  const { writeContract: writeExecuteWithdraw, data: executeHash, isPending: isExecutePending } = useWriteContract()
+
+  const { isLoading: isDepositConfirming, isSuccess: isDepositSuccess } = useWaitForTransactionReceipt({
+    hash: depositHash,
+  })
+
+  const { isLoading: isWithdrawRequestConfirming, isSuccess: isWithdrawRequestSuccess } = useWaitForTransactionReceipt({
+    hash: withdrawRequestHash,
+  })
+
+  const { isLoading: isExecuteConfirming, isSuccess: isExecuteSuccess } = useWaitForTransactionReceipt({
+    hash: executeHash,
+  })
+
+  // Get user balance
+  const { data: balance, refetch: refetchBalance } = useReadContract({
+    address: SHADOWAUTH_ADDRESS,
+    abi: SHADOWAUTH_ABI,
+    functionName: 'getBalance',
+    args: [address as `0x${string}`],
+  })
+
+  // Get withdrawal request status
+  const { data: withdrawalRequestData, refetch: refetchWithdrawalRequest } = useReadContract({
+    address: SHADOWAUTH_ADDRESS,
+    abi: SHADOWAUTH_ABI,
+    functionName: 'getWithdrawalRequest',
+    args: [address as `0x${string}`],
+  })
+
+  // Check if user is registered
+  const { data: isRegistered } = useReadContract({
+    address: SHADOWAUTH_ADDRESS,
+    abi: SHADOWAUTH_ABI,
+    functionName: 'isUserRegistered',
+    args: [address as `0x${string}`],
+  })
 
   useEffect(() => {
-    if (contract && user.isRegistered) {
-      loadWithdrawalLimits();
+    if (withdrawalRequestData) {
+      const [amount, requestId, isPending, canWithdraw, isProcessed] = withdrawalRequestData as [bigint, bigint, boolean, boolean, boolean]
+      setWithdrawalRequest({
+        amount,
+        requestId,
+        isPending,
+        canWithdraw,
+        isProcessed
+      })
     }
-  }, [contract, user]);
+  }, [withdrawalRequestData])
 
-  const loadWithdrawalLimits = async () => {
-    if (!contract) return;
+  useEffect(() => {
+    if (isDepositSuccess) {
+      setDepositAmount('')
+      refetchBalance()
+    }
+  }, [isDepositSuccess, refetchBalance])
 
+  useEffect(() => {
+    if (isWithdrawRequestSuccess) {
+      setWithdrawAmount('')
+      refetchWithdrawalRequest()
+    }
+  }, [isWithdrawRequestSuccess, refetchWithdrawalRequest])
+
+  useEffect(() => {
+    if (isExecuteSuccess) {
+      refetchBalance()
+      refetchWithdrawalRequest()
+    }
+  }, [isExecuteSuccess, refetchBalance, refetchWithdrawalRequest])
+
+  const handleDeposit = async () => {
     try {
-      setLoading(true);
-      const limitPromises = [0, 1, 2].map(async (index) => {
-        try {
-          const [maxAmount, deadline, isSet] = await contract.getWithdrawalLimit(user.address, index);
-          return {
-            signerIndex: index,
-            maxAmount: maxAmount.toString(), // This will be an encrypted handle
-            deadline: Number(deadline),
-            isSet
-          };
-        } catch (error) {
-          console.error(`Error loading limit for signer ${index}:`, error);
-          return {
-            signerIndex: index,
-            maxAmount: '0',
-            deadline: 0,
-            isSet: false
-          };
-        }
-      });
-
-      const loadedLimits = await Promise.all(limitPromises);
-      setLimits(loadedLimits);
+      const amount = parseEther(depositAmount)
+      
+      writeDeposit({
+        address: SHADOWAUTH_ADDRESS,
+        abi: SHADOWAUTH_ABI,
+        functionName: 'deposit',
+        value: amount,
+      })
     } catch (error) {
-      console.error('Error loading withdrawal limits:', error);
-    } finally {
-      setLoading(false);
+      console.error('Deposit error:', error)
+      alert(`Deposit failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
-  };
+  }
 
-  const formatDeadline = (timestamp: number): string => {
-    if (timestamp === 0) return 'Not set';
-    return new Date(timestamp * 1000).toLocaleString();
-  };
+  const handleRequestWithdrawal = async () => {
+    try {
+      const amount = parseEther(withdrawAmount)
+      
+      writeWithdrawRequest({
+        address: SHADOWAUTH_ADDRESS,
+        abi: SHADOWAUTH_ABI,
+        functionName: 'requestWithdrawal',
+        args: [amount],
+      })
+    } catch (error) {
+      console.error('Withdrawal request error:', error)
+      alert(`Withdrawal request failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
 
-  const isDeadlineValid = (timestamp: number): boolean => {
-    if (timestamp === 0) return false;
-    return timestamp > Date.now() / 1000;
-  };
+  const handleExecuteWithdrawal = async () => {
+    try {
+      writeExecuteWithdraw({
+        address: SHADOWAUTH_ADDRESS,
+        abi: SHADOWAUTH_ABI,
+        functionName: 'executeWithdrawal',
+      })
+    } catch (error) {
+      console.error('Execute withdrawal error:', error)
+      alert(`Execute withdrawal failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
 
-  const canWithdraw = (): boolean => {
-    return limits.every(limit => limit.isSet && isDeadlineValid(limit.deadline));
-  };
+  if (!isRegistered) {
+    return (
+      <div className="dashboard-inactive">
+        <h3>Account Not Registered</h3>
+        <p>Please register your account first before using the dashboard.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="dashboard">
-      <div className="dashboard-header">
-        <h2>Account Dashboard</h2>
-        <div className="user-info">
-          <div className="info-item">
-            <label>Address:</label>
-            <span className="address">{user.address}</span>
-          </div>
-          <div className="info-item">
-            <label>Status:</label>
-            <span className={`status ${user.isRegistered ? 'registered' : 'unregistered'}`}>
-              {user.isRegistered ? 'Registered' : 'Not Registered'}
-            </span>
-          </div>
-          <div className="info-item">
-            <label>Balance:</label>
-            <span className="balance">
-              {user.balance === 'encrypted' ? 'Encrypted (Private)' : `${user.balance} ETH`}
-            </span>
-          </div>
+      <h3>Account Dashboard</h3>
+      
+      {/* Balance Display */}
+      <div className="balance-card">
+        <h4>Your Balance</h4>
+        <div className="balance-amount">
+          {balance !== undefined ? `${formatEther(balance as bigint)} ETH` : 'Loading...'}
         </div>
       </div>
 
-      <div className="withdrawal-status">
-        <h3>Withdrawal Status</h3>
-        <div className={`status-indicator ${canWithdraw() ? 'ready' : 'pending'}`}>
-          {canWithdraw() ? '✓ Ready to Withdraw' : '⏳ Waiting for Multi-sig Authorization'}
+      {/* Deposit Section */}
+      <div className="action-card">
+        <h4>Deposit Funds</h4>
+        <div className="input-group">
+          <label htmlFor="deposit-amount">Amount (ETH):</label>
+          <input
+            id="deposit-amount"
+            type="number"
+            step="0.01"
+            placeholder="0.0"
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(e.target.value)}
+            disabled={isDepositPending || isDepositConfirming}
+          />
         </div>
+        <button
+          onClick={handleDeposit}
+          disabled={
+            !depositAmount || 
+            parseFloat(depositAmount) <= 0 || 
+            isDepositPending || 
+            isDepositConfirming
+          }
+          className="action-button deposit-button"
+        >
+          {isDepositPending ? 'Confirming...' : 
+           isDepositConfirming ? 'Processing...' : 
+           'Deposit'}
+        </button>
       </div>
 
-      <div className="limits-section">
-        <h3>Multi-sig Withdrawal Limits</h3>
-        {loading ? (
-          <div className="loading">Loading limits...</div>
+      {/* Withdrawal Section */}
+      <div className="action-card">
+        <h4>Withdraw Funds</h4>
+        
+        {!withdrawalRequest?.isPending ? (
+          <>
+            <div className="input-group">
+              <label htmlFor="withdraw-amount">Amount (ETH):</label>
+              <input
+                id="withdraw-amount"
+                type="number"
+                step="0.01"
+                placeholder="0.0"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                disabled={isWithdrawRequestPending || isWithdrawRequestConfirming}
+              />
+            </div>
+            <button
+              onClick={handleRequestWithdrawal}
+              disabled={
+                !withdrawAmount || 
+                parseFloat(withdrawAmount) <= 0 || 
+                isWithdrawRequestPending || 
+                isWithdrawRequestConfirming
+              }
+              className="action-button withdraw-button"
+            >
+              {isWithdrawRequestPending ? 'Confirming...' : 
+               isWithdrawRequestConfirming ? 'Processing...' : 
+               'Request Withdrawal'}
+            </button>
+          </>
         ) : (
-          <div className="limits-grid">
-            {limits.map((limit) => (
-              <div key={limit.signerIndex} className="limit-card">
-                <div className="limit-header">
-                  <h4>Signer {limit.signerIndex + 1}</h4>
-                  <span className={`status-badge ${limit.isSet ? 'set' : 'not-set'}`}>
-                    {limit.isSet ? 'Set' : 'Not Set'}
-                  </span>
-                </div>
-                <div className="limit-details">
-                  <div className="detail">
-                    <label>Max Amount:</label>
-                    <span>{limit.isSet ? 'Encrypted' : 'Not set'}</span>
-                  </div>
-                  <div className="detail">
-                    <label>Deadline:</label>
-                    <span className={isDeadlineValid(limit.deadline) ? 'valid' : 'invalid'}>
-                      {formatDeadline(limit.deadline)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="withdrawal-request-status">
+            <h5>Withdrawal Request Status</h5>
+            <p>Amount: {formatEther(withdrawalRequest.amount)} ETH</p>
+            <p>Request ID: {withdrawalRequest.requestId.toString()}</p>
+            
+            {!withdrawalRequest.isProcessed ? (
+              <p className="status-pending">⏳ Waiting for multisig decryption...</p>
+            ) : withdrawalRequest.canWithdraw ? (
+              <>
+                <p className="status-approved">✅ Withdrawal approved by multisig</p>
+                <button
+                  onClick={handleExecuteWithdrawal}
+                  disabled={isExecutePending || isExecuteConfirming}
+                  className="action-button execute-button"
+                >
+                  {isExecutePending ? 'Confirming...' : 
+                   isExecuteConfirming ? 'Processing...' : 
+                   'Execute Withdrawal'}
+                </button>
+              </>
+            ) : (
+              <p className="status-rejected">❌ Withdrawal rejected by multisig</p>
+            )}
           </div>
         )}
       </div>
 
-      <div className="actions-section">
-        <h3>Available Actions</h3>
-        <div className="action-buttons">
-          <div className="action-item">
-            <h4>Deposit Funds</h4>
-            <p>Add ETH to your encrypted wallet</p>
-            <span className="action-status available">Always Available</span>
-          </div>
-          <div className="action-item">
-            <h4>Withdraw Funds</h4>
-            <p>Withdraw ETH with multi-sig authorization</p>
-            <span className={`action-status ${canWithdraw() ? 'available' : 'unavailable'}`}>
-              {canWithdraw() ? 'Available' : 'Needs Authorization'}
-            </span>
-          </div>
-          <div className="action-item">
-            <h4>Set Limits</h4>
-            <p>Multi-sig addresses can set withdrawal limits</p>
-            <span className="action-status available">Available for Signers</span>
-          </div>
+      {/* Transaction Status */}
+      {(isDepositSuccess || isWithdrawRequestSuccess || isExecuteSuccess) && (
+        <div className="success-message">
+          {isDepositSuccess && 'Deposit successful!'}
+          {isWithdrawRequestSuccess && 'Withdrawal request submitted!'}
+          {isExecuteSuccess && 'Withdrawal executed successfully!'}
         </div>
-      </div>
-
-      <div className="info-section">
-        <h3>How ShadowAuth Works</h3>
-        <div className="info-grid">
-          <div className="info-card">
-            <h4>🔒 Encrypted Multi-sig</h4>
-            <p>Your multi-signature addresses are encrypted and stored privately on-chain</p>
-          </div>
-          <div className="info-card">
-            <h4>💰 Free Deposits</h4>
-            <p>Deposit funds anytime without restrictions</p>
-          </div>
-          <div className="info-card">
-            <h4>🔐 Controlled Withdrawals</h4>
-            <p>All 3 multi-sig addresses must authorize withdrawals with limits and deadlines</p>
-          </div>
-          <div className="info-card">
-            <h4>⏰ Time-limited</h4>
-            <p>Withdrawal authorizations expire after the set deadline</p>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
-  );
-};
+  )
+}
