@@ -39,11 +39,26 @@ contract ShadowAuth is SepoliaConfig {
     // signerAddress => WithdrawalLimit
     mapping(address => WithdrawalLimit) private withdrawalLimits;
 
+    // Withdrawal requests for decryption
+    struct WithdrawalRequest {
+        uint256 amount;
+        uint256 requestId;
+        bool isPending;
+        address user; // Store the user who made the request
+        bool canWithdraw; // Result of multi-sig verification
+        bool isProcessed; // Whether decryption callback has been processed
+    }
+
+    mapping(address => WithdrawalRequest) private withdrawalRequests;
+    mapping(uint256 => address) private requestIdToUser; // Map request ID to user
+
     // Events
     event UserRegistered(address indexed user);
     event Deposit(address indexed user, uint256 amount);
     event WithdrawalLimitSet(address indexed user, uint256 indexed signerIndex);
-    event Withdrawal(address indexed user, uint256 amount);
+    event WithdrawalRequested(address indexed user, uint256 amount, uint256 requestId);
+    event WithdrawalExecuted(address indexed user, uint256 amount);
+    event SignersDecrypted(address indexed user, uint256 requestId);
 
     // Errors
     error AlreadyRegistered();
@@ -53,6 +68,9 @@ contract ShadowAuth is SepoliaConfig {
     error InsufficientBalance();
     error WithdrawalNotAuthorized();
     error WithdrawalDeadlineExpired();
+    error WithdrawalRequestPending();
+    error NoWithdrawalRequest();
+    error DecryptionInProgress();
 
     /// @notice Register a user with 3 encrypted multi-signature addresses
     /// @param encryptedSigner1 First encrypted multi-sig address
@@ -111,69 +129,203 @@ contract ShadowAuth is SepoliaConfig {
     }
 
     /// @notice Set withdrawal limit and deadline by multi-sig address
-    /// @param maxAmount Encrypted maximum withdrawal amount
+    /// @param maxAmount Maximum withdrawal amount
     /// @param deadline Withdrawal deadline timestamp
     function setWithdrawalLimit(uint256 maxAmount, uint256 deadline) external {
         require(deadline > block.timestamp, "Deadline must be in the future");
         require(maxAmount > 0, "amount is 0");
-        // Note: Direct verification of encrypted addresses against plaintext addresses
-        // is not feasible in FHE. This function relies on the caller being honest
-        // about their identity, which will be verified during withdrawal through
-        // the encrypted multi-sig validation process.
 
-        // Validate and store the withdrawal limit
-        // euint64 maxAmount = FHE.fromExternal(encryptedMaxAmount, inputProof);
+        // Note: The caller (msg.sender) is one of the multi-sig addresses
+        // Setting withdrawal limit for themselves as the authorizing signer
 
         withdrawalLimits[msg.sender] = WithdrawalLimit({maxAmount: maxAmount, deadline: deadline, isSet: true});
+
+        emit WithdrawalLimitSet(msg.sender, 0); // Signer sets limit for themselves
     }
 
-    /// @notice Withdraw funds after multi-sig verification
+    /// @notice Request withdrawal - first step that initiates decryption of multi-sig addresses
     /// @param withdrawAmount withdrawal amount
-    /// @dev Requires all 3 multi-sig addresses to have set valid withdrawal limits
-    function withdraw(uint256 withdrawAmount) external {
+    /// @dev Creates a withdrawal request and initiates decryption of encrypted signer addresses
+    function requestWithdrawal(uint256 withdrawAmount) external {
         if (!userMultiSig[msg.sender].isRegistered) {
             revert NotRegistered();
         }
 
-        // euint64 withdrawAmount = FHE.fromExternal(encryptedAmount, inputProof);
+        if (withdrawalRequests[msg.sender].isPending) {
+            revert WithdrawalRequestPending();
+        }
+
         uint256 currentBalance = balances[msg.sender];
+        require(currentBalance >= withdrawAmount, "Insufficient balance");
 
-        // Check if user has sufficient balance
-        // ebool hasSufficientBalance = FHE.le(withdrawAmount, currentBalance);
-        require(currentBalance > withdrawAmount, "can not withdraw");
-        // Verify all 3 multi-sig addresses have set valid withdrawal limits (plaintext check)
+        // Prepare encrypted signers for decryption
+        bytes32[] memory ciphertexts = new bytes32[](3);
+        ciphertexts[0] = FHE.toBytes32(userMultiSig[msg.sender].signers[0]);
+        ciphertexts[1] = FHE.toBytes32(userMultiSig[msg.sender].signers[1]);
+        ciphertexts[2] = FHE.toBytes32(userMultiSig[msg.sender].signers[2]);
 
-        // for (uint256 i = 0; i < 3; i++) {
-        //     WithdrawalLimit storage limit = withdrawalLimits[msg.sender][i];
-        //     if (!limit.isSet || limit.deadline < block.timestamp) {}
-        //     if (limit.maxAmount < withdrawAmount) {
-        //         revert("multi-sig amount not match");
-        //     }
-        // }
+        // Request decryption of all 3 multi-sig addresses
+        uint256 requestId = FHE.requestDecryption(ciphertexts, this.decryptionCallback.selector);
 
-        // Perform conditional withdrawal using FHE.select
-        // euint64 actualWithdrawAmount = FHE.select(canWithdraw, withdrawAmount, FHE.asEuint64(0));
+        // Store withdrawal request
+        withdrawalRequests[msg.sender] = WithdrawalRequest({
+            amount: withdrawAmount,
+            requestId: requestId,
+            isPending: true,
+            user: msg.sender,
+            canWithdraw: false,
+            isProcessed: false
+        });
 
-        // Update balance conditionally
-        uint256 newBalance = currentBalance - withdrawAmount;
-        balances[msg.sender] = newBalance;
+        // Map request ID to user for callback lookup
+        requestIdToUser[requestId] = msg.sender;
 
-        // Note: In a real implementation, you would need to use the decryption oracle
-        // to decrypt the actualWithdrawAmount for the actual ETH transfer
-        // This is beyond the scope of this basic implementation
-
-        // Clear withdrawal limits only after successful withdrawal
-        // In practice, you'd want to decrypt first to verify non-zero withdrawal
-        // for (uint256 i = 0; i < 3; i++) {
-        //     delete withdrawalLimits[msg.sender][i];
-        // }
-
-        emit Withdrawal(msg.sender, withdrawAmount); // Amount kept private
+        emit WithdrawalRequested(msg.sender, withdrawAmount, requestId);
     }
 
-    /// @notice Get user's encrypted balance
+    /// @notice Decryption callback - receives decrypted multi-sig addresses and verifies withdrawal permission
+    /// @param requestId The decryption request ID
+    /// @param decryptedSigner1 First decrypted signer address
+    /// @param decryptedSigner2 Second decrypted signer address
+    /// @param decryptedSigner3 Third decrypted signer address
+    /// @param signatures Decryption signatures for verification
+    function decryptionCallback(
+        uint256 requestId,
+        address decryptedSigner1,
+        address decryptedSigner2,
+        address decryptedSigner3,
+        bytes[] memory signatures
+    ) public {
+        _processDecryptionCallback(requestId, decryptedSigner1, decryptedSigner2, decryptedSigner3, signatures);
+    }
+
+    /// @notice Internal function to process decryption callback
+    function _processDecryptionCallback(
+        uint256 requestId,
+        address decryptedSigner1,
+        address decryptedSigner2,
+        address decryptedSigner3,
+        bytes[] memory signatures
+    ) internal {
+        // Verify the decryption request
+        FHE.checkSignatures(requestId, signatures);
+
+        // Find the user for this request
+        address user = requestIdToUser[requestId];
+        require(user != address(0), "Invalid request ID");
+
+        WithdrawalRequest storage request = withdrawalRequests[user];
+        require(request.isPending && request.requestId == requestId, "Invalid request");
+        require(!request.isProcessed, "Request already processed");
+
+        // Verify withdrawal permissions
+        bool canWithdraw = _verifyWithdrawalPermissions(
+            user,
+            request.amount,
+            decryptedSigner1,
+            decryptedSigner2,
+            decryptedSigner3
+        );
+
+        // Update request status
+        request.canWithdraw = canWithdraw;
+        request.isProcessed = true;
+        
+        // Clean up withdrawal limits
+        _cleanupWithdrawalLimits(decryptedSigner1, decryptedSigner2, decryptedSigner3);
+        
+        emit SignersDecrypted(user, requestId);
+    }
+
+    /// @notice Internal function to cleanup withdrawal limits
+    function _cleanupWithdrawalLimits(
+        address signer1,
+        address signer2,
+        address signer3
+    ) internal {
+        delete withdrawalLimits[signer1];
+        delete withdrawalLimits[signer2];
+        delete withdrawalLimits[signer3];
+    }
+
+    /// @notice Internal function to verify withdrawal permissions
+    /// @param withdrawAmount The amount to withdraw
+    /// @param signer1 First decrypted signer address
+    /// @param signer2 Second decrypted signer address
+    /// @param signer3 Third decrypted signer address
+    /// @return bool Whether withdrawal is authorized
+    function _verifyWithdrawalPermissions(
+        address /* user */,
+        uint256 withdrawAmount,
+        address signer1,
+        address signer2,
+        address signer3
+    ) private view returns (bool) {
+        // Check each decrypted signer's withdrawal limit
+        address[3] memory signers = [signer1, signer2, signer3];
+
+        for (uint256 i = 0; i < 3; i++) {
+            WithdrawalLimit storage limit = withdrawalLimits[signers[i]];
+
+            // Check if limit is set
+            if (!limit.isSet) {
+                return false;
+            }
+
+            // Check if deadline has not expired
+            if (limit.deadline < block.timestamp) {
+                return false;
+            }
+
+            // Check if amount is within limit
+            if (limit.maxAmount < withdrawAmount) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// @notice Execute withdrawal after successful multi-sig verification
+    /// @dev Called after decryption callback has verified all multi-sig permissions
+    function executeWithdrawal() external {
+        WithdrawalRequest storage request = withdrawalRequests[msg.sender];
+
+        if (!request.isPending) {
+            revert NoWithdrawalRequest();
+        }
+
+        if (!request.isProcessed) {
+            revert DecryptionInProgress();
+        }
+
+        if (!request.canWithdraw) {
+            revert WithdrawalNotAuthorized();
+        }
+
+        // Execute the withdrawal
+        uint256 currentBalance = balances[msg.sender];
+        require(currentBalance >= request.amount, "Insufficient balance");
+
+        balances[msg.sender] = currentBalance - request.amount;
+
+        // Transfer ETH to user
+        (bool success, ) = payable(msg.sender).call{value: request.amount}("");
+        require(success, "Transfer failed");
+
+        // Clear withdrawal request
+        delete requestIdToUser[request.requestId];
+        delete withdrawalRequests[msg.sender];
+
+        // Note: In the original design, withdrawal limits are cleared by each signer
+        // after successful withdrawal. This would need to be done separately.
+
+        emit WithdrawalExecuted(msg.sender, request.amount);
+    }
+
+    /// @notice Get user's balance
     /// @param user Address of the user
-    /// @return Encrypted balance
+    /// @return Balance amount
     function getBalance(address user) external view returns (uint256) {
         return balances[user];
     }
@@ -197,5 +349,31 @@ contract ShadowAuth is SepoliaConfig {
     /// @return Boolean indicating registration status
     function isUserRegistered(address user) external view returns (bool) {
         return userMultiSig[user].isRegistered;
+    }
+
+    /// @notice Get withdrawal request status
+    /// @param user Address of the user
+    /// @return amount The withdrawal amount
+    /// @return requestId The decryption request ID
+    /// @return isPending Whether the request is pending
+    /// @return canWithdraw Whether withdrawal is authorized
+    /// @return isProcessed Whether decryption has been processed
+    function getWithdrawalRequest(
+        address user
+    ) external view returns (uint256 amount, uint256 requestId, bool isPending, bool canWithdraw, bool isProcessed) {
+        WithdrawalRequest storage request = withdrawalRequests[user];
+        return (request.amount, request.requestId, request.isPending, request.canWithdraw, request.isProcessed);
+    }
+
+    /// @notice Get withdrawal limit for a specific signer
+    /// @param signerAddress The signer address
+    /// @return maxAmount Maximum withdrawal amount
+    /// @return deadline Withdrawal deadline
+    /// @return isSet Whether the limit is set
+    function getWithdrawalLimit(
+        address signerAddress
+    ) external view returns (uint256 maxAmount, uint256 deadline, bool isSet) {
+        WithdrawalLimit storage limit = withdrawalLimits[signerAddress];
+        return (limit.maxAmount, limit.deadline, limit.isSet);
     }
 }
