@@ -23,18 +23,18 @@ task("shadowauth:register")
     
     await fhevm.initializeCLIApi();
     
-    const [deployer] = await ethers.getSigners();
-    console.log("Registering user:", await deployer.getAddress());
+    const deployers = await ethers.getSigners();
+    console.log("Registering user:", await deployers[0].getAddress());
     
     const contractAddress = await getDeployedContract(hre);
     console.log("Using ShadowAuth contract at:", contractAddress);
     const shadowAuth = await ethers.getContractAt("ShadowAuth", contractAddress);
     
     // Create encrypted input
-    const input = fhevm.createEncryptedInput(contractAddress, await deployer.getAddress());
-    input.addAddress(signer1);
-    input.addAddress(signer2);
-    input.addAddress(signer3);
+    const input = fhevm.createEncryptedInput(contractAddress, await deployers[0].getAddress());
+    input.addAddress(deployers[signer1].address);
+    input.addAddress(deployers[signer2].address);
+    input.addAddress(deployers[signer3].address);
     const encryptedInput = await input.encrypt();
     
     console.log("Registering user with encrypted multi-sig addresses...");
@@ -77,11 +77,11 @@ task("shadowauth:deposit")
 // Task to set withdrawal limit (for multi-sig addresses)
 task("shadowauth:set-withdrawal-limit")
   .addParam("maxamount", "Maximum withdrawal amount (in ETH)")
-  .addParam("deadline", "Deadline timestamp (seconds since epoch)")
+  .addParam("duration", "Duration from now in seconds (e.g., 3600 for 1 hour)")
   .setDescription("Set withdrawal limit and deadline (called by multi-sig address)")
   .setAction(async function (taskArguments: TaskArguments, hre) {
     const { ethers } = hre;
-    const { maxamount, deadline } = taskArguments;
+    const { maxamount, duration } = taskArguments;
     
     const [deployer] = await ethers.getSigners();
     console.log("Setting withdrawal limit with signer:", await deployer.getAddress());
@@ -92,8 +92,16 @@ task("shadowauth:set-withdrawal-limit")
     
     const maxAmountWei = ethers.parseEther(maxamount);
     
-    console.log(`Setting withdrawal limit of ${maxamount} ETH with deadline ${deadline}...`);
-    const tx = await shadowAuth.setWithdrawalLimit(maxAmountWei, parseInt(deadline));
+    // Calculate deadline as current time + duration
+    const currentTime = Math.floor(Date.now() / 1000);
+    const deadline = currentTime + parseInt(duration);
+    const deadlineDate = new Date(deadline * 1000);
+    
+    console.log(`Setting withdrawal limit of ${maxamount} ETH...`);
+    console.log(`Duration: ${duration} seconds (${Math.floor(parseInt(duration) / 3600)} hours ${Math.floor((parseInt(duration) % 3600) / 60)} minutes)`);
+    console.log(`Deadline: ${deadlineDate.toISOString()}`);
+    
+    const tx = await shadowAuth.setWithdrawalLimit(maxAmountWei, deadline);
     
     console.log("Transaction hash:", tx.hash);
     await tx.wait();
@@ -128,7 +136,7 @@ task("shadowauth:request-withdrawal")
 // Task to execute withdrawal (second step)
 task("shadowauth:execute-withdrawal")
   .setDescription("Execute withdrawal after multi-sig verification is complete")
-  .setAction(async function (taskArguments: TaskArguments, hre) {
+  .setAction(async function (_taskArguments: TaskArguments, hre) {
     const { ethers } = hre;
     
     const [deployer] = await ethers.getSigners();
