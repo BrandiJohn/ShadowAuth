@@ -15,7 +15,7 @@ function App() {
   useEffect(() => {
     const init = async () => {
       try {
-        await initFhevm()
+        // await initFhevm()
         setFhevmReady(true)
         console.log('FHEVM initialized successfully')
       } catch (error) {
