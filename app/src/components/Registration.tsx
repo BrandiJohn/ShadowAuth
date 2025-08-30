@@ -40,6 +40,10 @@ export default function Registration({ address, fhevmReady }: Props) {
       setMultisigAddresses(['', '', ''])
     }
   }, [isSuccess])
+//  as `0x${string}`
+  const hexConverter = (array:Uint8Array):`0x${string}`=>{
+    return `0x${Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+  }
 
   const handleRegister = async () => {
     try {
@@ -61,6 +65,7 @@ export default function Registration({ address, fhevmReady }: Props) {
 
       const fhevm = getFhevmInstance()
 
+
       // Create encrypted input for the three multisig addresses
       const input = fhevm.createEncryptedInput(SHADOWAUTH_ADDRESS, address)
       input.addAddress(multisigAddresses[0].trim())
@@ -75,10 +80,10 @@ export default function Registration({ address, fhevmReady }: Props) {
         abi: SHADOWAUTH_ABI,
         functionName: 'register',
         args: [
-          encryptedInput.handles[0], // encryptedSigner1
-          encryptedInput.handles[1], // encryptedSigner2
-          encryptedInput.handles[2], // encryptedSigner3
-          encryptedInput.inputProof,
+          hexConverter(encryptedInput.handles[0]), // encryptedSigner1
+          hexConverter(encryptedInput.handles[1]), // encryptedSigner2
+          hexConverter(encryptedInput.handles[2]), // encryptedSigner3
+          hexConverter(encryptedInput.inputProof),
         ],
       })
     } catch (error) {
