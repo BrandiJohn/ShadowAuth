@@ -124,3 +124,93 @@ button:focus-visible {
 }
 
 /* Remove light theme - we want to keep the dark modern design */
+
+/* Multi-sig display styles */
+.multisig-display {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-secondary);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-card);
+}
+
+.multisig-display h4 {
+  color: var(--text-primary);
+  font-size: 1.2em;
+  margin-bottom: 1rem;
+  background: var(--accent-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.encrypted-address {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+  border: 1px solid var(--border-muted);
+}
+
+.encrypted-address label {
+  display: block;
+  font-size: 0.9em;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.encrypted-input, .decrypted-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border-secondary);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.85em;
+  word-break: break-all;
+  transition: all 0.3s ease;
+}
+
+.encrypted-input {
+  background: rgba(102, 126, 234, 0.1);
+  border-color: var(--border-primary);
+}
+
+.decrypted-input {
+  background: rgba(0, 242, 254, 0.1);
+  border-color: rgba(0, 242, 254, 0.3);
+  margin-top: 0.5rem;
+}
+
+.decrypted-value {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-muted);
+}
+
+.decrypt-button {
+  margin-top: 1.5rem;
+  background: var(--accent-success);
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.decrypt-button:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 242, 254, 0.3);
+}
+
+.decrypt-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
 import { isAddress } from 'viem'
 import { getFhevmInstance } from '../fhevm'
 import { SHADOWAUTH_ADDRESS, SHADOWAUTH_ABI } from '../contract'
@@ -13,6 +13,12 @@ export default function Registration({ address, fhevmReady }: Props) {
   const [isRegistered, setIsRegistered] = useState(false)
   const [multisigAddresses, setMultisigAddresses] = useState(['', '', ''])
   const [isRegistering, setIsRegistering] = useState(false)
+  const [encryptedAddresses, setEncryptedAddresses] = useState<string[]>([])
+  const [decryptedAddresses, setDecryptedAddresses] = useState<string[]>([])
+  const [isDecrypting, setIsDecrypting] = useState(false)
+  const [decryptError, setDecryptError] = useState<string | null>(null)
+  
+  const { connector } = useAccount()
 
   const { writeContract, data: hash, error, isPending } = useWriteContract()
 
@@ -28,11 +34,54 @@ export default function Registration({ address, fhevmReady }: Props) {
     args: [address as `0x${string}`],
   })
 
+  // Get encrypted multi-sig addresses
+  const { data: encryptedSigner1 } = useReadContract({
+    address: SHADOWAUTH_ADDRESS,
+    abi: SHADOWAUTH_ABI,
+    functionName: 'getMultiSigAddress',
+    args: [address as `0x${string}`, BigInt(0)],
+    query: {
+      enabled: isRegistered && fhevmReady
+    }
+  })
+
+  const { data: encryptedSigner2 } = useReadContract({
+    address: SHADOWAUTH_ADDRESS,
+    abi: SHADOWAUTH_ABI,
+    functionName: 'getMultiSigAddress',
+    args: [address as `0x${string}`, BigInt(1)],
+    query: {
+      enabled: isRegistered && fhevmReady
+    }
+  })
+
+  const { data: encryptedSigner3 } = useReadContract({
+    address: SHADOWAUTH_ADDRESS,
+    abi: SHADOWAUTH_ABI,
+    functionName: 'getMultiSigAddress',
+    args: [address as `0x${string}`, BigInt(2)],
+    query: {
+      enabled: isRegistered && fhevmReady
+    }
+  })
+
   useEffect(() => {
     if (registrationStatus !== undefined) {
       setIsRegistered(registrationStatus as boolean)
     }
   }, [registrationStatus])
+
+  // Update encrypted addresses when data is fetched
+  useEffect(() => {
+    const addresses = []
+    if (encryptedSigner1) addresses.push(encryptedSigner1 as string)
+    if (encryptedSigner2) addresses.push(encryptedSigner2 as string)
+    if (encryptedSigner3) addresses.push(encryptedSigner3 as string)
+    
+    if (addresses.length === 3) {
+      setEncryptedAddresses(addresses)
+    }
+  }, [encryptedSigner1, encryptedSigner2, encryptedSigner3])
 
   useEffect(() => {
     if (isSuccess) {
@@ -94,11 +143,148 @@ export default function Registration({ address, fhevmReady }: Props) {
     }
   }
 
+  const handleDecrypt = async () => {
+    try {
+      setIsDecrypting(true)
+      setDecryptError(null)
+
+      if (!fhevmReady) {
+        throw new Error('FHE system not ready')
+      }
+
+      if (encryptedAddresses.length !== 3) {
+        throw new Error('Encrypted addresses not loaded')
+      }
+
+      if (!connector) {
+        throw new Error('No wallet connected')
+      }
+
+      const fhevm = getFhevmInstance()
+      
+      // Generate keypair for decryption
+      const keypair = fhevm.generateKeypair()
+      
+      // Prepare handles and contract pairs for decryption
+      const handleContractPairs = encryptedAddresses.map(handle => ({
+        handle: handle,
+        contractAddress: SHADOWAUTH_ADDRESS,
+      }))
+      
+      const startTimeStamp = Math.floor(Date.now() / 1000).toString()
+      const durationDays = "10"
+      const contractAddresses = [SHADOWAUTH_ADDRESS]
+      
+      // Create EIP-712 signature for user decryption
+      const eip712 = fhevm.createEIP712(
+        keypair.publicKey,
+        contractAddresses,
+        startTimeStamp,
+        durationDays
+      )
+      
+      const provider = await connector.getProvider()
+      if (!provider) {
+        throw new Error('Provider not available')
+      }
+      
+      // Create a signer-like object for signing typed data
+      const signature = await (provider as any).request({
+        method: 'eth_signTypedData_v4',
+        params: [
+          address,
+          JSON.stringify({
+            domain: eip712.domain,
+            types: {
+              UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
+            },
+            primaryType: 'UserDecryptRequestVerification',
+            message: eip712.message,
+          })
+        ]
+      })
+      
+      // Decrypt the addresses
+      const result = await fhevm.userDecrypt(
+        handleContractPairs,
+        keypair.privateKey,
+        keypair.publicKey,
+        signature.replace("0x", ""),
+        contractAddresses,
+        address,
+        startTimeStamp,
+        durationDays
+      )
+      
+      // Extract decrypted values
+      const decryptedValues = encryptedAddresses.map(handle => result[handle])
+      setDecryptedAddresses(decryptedValues)
+      
+    } catch (error) {
+      console.error('Decryption error:', error)
+      setDecryptError(error instanceof Error ? error.message : 'Decryption failed')
+    } finally {
+      setIsDecrypting(false)
+    }
+  }
+
   if (isRegistered) {
     return (
       <div className="registration-success">
         <h3>✓ Registration Complete</h3>
         <p>Your account is registered with encrypted multisig addresses.</p>
+        
+        <div className="multisig-display">
+          <h4>Your Encrypted Multi-sig Addresses:</h4>
+          
+          {encryptedAddresses.length > 0 ? (
+            <>
+              {encryptedAddresses.map((encryptedAddr, index) => (
+                <div key={index} className="encrypted-address">
+                  <label>Multi-sig Address {index + 1} (Encrypted):</label>
+                  <div className="address-value">
+                    <input 
+                      type="text" 
+                      value={encryptedAddr} 
+                      readOnly 
+                      className="encrypted-input"
+                    />
+                  </div>
+                  {decryptedAddresses[index] && (
+                    <div className="decrypted-value">
+                      <label>Decrypted:</label>
+                      <input 
+                        type="text" 
+                        value={decryptedAddresses[index]} 
+                        readOnly 
+                        className="decrypted-input"
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+              
+              <button
+                onClick={handleDecrypt}
+                disabled={!fhevmReady || isDecrypting || encryptedAddresses.length !== 3}
+                className="decrypt-button"
+              >
+                {!fhevmReady ? 'FHE Not Ready' :
+                 isDecrypting ? 'Decrypting...' :
+                 decryptedAddresses.length > 0 ? 'Decrypt Again' :
+                 'Decrypt Addresses'}
+              </button>
+              
+              {decryptError && (
+                <div className="error">
+                  Decryption Error: {decryptError}
+                </div>
+              )}
+            </>
+          ) : (
+            <p>Loading encrypted addresses...</p>
+          )}
+        </div>
       </div>
     )
   }
