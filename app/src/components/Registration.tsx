@@ -6,9 +6,10 @@ import { SHADOWAUTH_ADDRESS, SHADOWAUTH_ABI } from '../contract'
 
 interface Props {
   address: string
+  fhevmReady: boolean
 }
 
-export default function Registration({ address }: Props) {
+export default function Registration({ address, fhevmReady }: Props) {
   const [isRegistered, setIsRegistered] = useState(false)
   const [multisigAddresses, setMultisigAddresses] = useState(['', '', ''])
   const [isRegistering, setIsRegistering] = useState(false)
@@ -43,6 +44,11 @@ export default function Registration({ address }: Props) {
   const handleRegister = async () => {
     try {
       setIsRegistering(true)
+
+      // Check if FHE is ready
+      if (!fhevmReady) {
+        throw new Error('Please initialize FHE system first')
+      }
 
       // Validate addresses
       const validAddresses = multisigAddresses.every(addr => 
@@ -117,9 +123,17 @@ export default function Registration({ address }: Props) {
         </div>
       ))}
 
+      {!fhevmReady && (
+        <div className="fhe-required">
+          <p>⚠️ FHE system must be initialized to register with encrypted addresses</p>
+          <p>Click "Initialize FHE" in the header to enable registration.</p>
+        </div>
+      )}
+
       <button
         onClick={handleRegister}
         disabled={
+          !fhevmReady ||
           isRegistering || 
           isPending || 
           isConfirming || 
@@ -127,7 +141,8 @@ export default function Registration({ address }: Props) {
         }
         className="register-button"
       >
-        {isRegistering || isPending ? 'Encrypting...' : 
+        {!fhevmReady ? 'Initialize FHE Required' :
+         isRegistering || isPending ? 'Encrypting...' : 
          isConfirming ? 'Confirming...' : 
          'Register Account'}
       </button>

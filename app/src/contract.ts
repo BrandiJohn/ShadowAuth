@@ -13,12 +13,27 @@ export const SHADOWAUTH_ABI = [
   },
   {
     "inputs": [],
+    "name": "HandlesAlreadySavedForRequestID",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InsufficientBalance",
     "type": "error"
   },
   {
     "inputs": [],
+    "name": "InvalidKMSSignatures",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InvalidSignerIndex",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoHandleFoundForRequestID",
     "type": "error"
   },
   {
@@ -38,6 +53,11 @@ export const SHADOWAUTH_ABI = [
   },
   {
     "inputs": [],
+    "name": "UnsupportedHandleType",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "WithdrawalDeadlineExpired",
     "type": "error"
   },
@@ -50,6 +70,19 @@ export const SHADOWAUTH_ABI = [
     "inputs": [],
     "name": "WithdrawalRequestPending",
     "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "requestID",
+        "type": "uint256"
+      }
+    ],
+    "name": "DecryptionFulfilled",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -131,9 +164,9 @@ export const SHADOWAUTH_ABI = [
         "type": "address"
       },
       {
-        "indexed": false,
+        "indexed": true,
         "internalType": "uint256",
-        "name": "indexed",
+        "name": "signerIndex",
         "type": "uint256"
       }
     ],
@@ -249,7 +282,7 @@ export const SHADOWAUTH_ABI = [
       {
         "internalType": "eaddress",
         "name": "",
-        "type": "uint256"
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -347,17 +380,17 @@ export const SHADOWAUTH_ABI = [
       {
         "internalType": "externalEaddress",
         "name": "encryptedSigner1",
-        "type": "uint256"
+        "type": "bytes32"
       },
       {
         "internalType": "externalEaddress",
         "name": "encryptedSigner2",
-        "type": "uint256"
+        "type": "bytes32"
       },
       {
         "internalType": "externalEaddress",
         "name": "encryptedSigner3",
-        "type": "uint256"
+        "type": "bytes32"
       },
       {
         "internalType": "bytes",
