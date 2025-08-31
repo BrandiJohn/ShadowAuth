@@ -246,18 +246,22 @@ export default function Registration({ address, fhevmReady }: Props) {
             <>
               {encryptedAddresses.map((encryptedAddr, index) => (
                 <div key={index} className="encrypted-address">
-                  <label>Multi-sig Address {index + 1} (Encrypted):</label>
-                  <div className="address-value">
-                    <input 
-                      type="text" 
-                      value={encryptedAddr} 
-                      readOnly 
-                      className="encrypted-input"
-                    />
-                  </div>
+                  {decryptedAddresses.length === 0 && (
+                    <>
+                      <label>Multi-sig Address {index + 1} (Encrypted):</label>
+                      <div className="address-value">
+                        <input 
+                          type="text" 
+                          value={encryptedAddr} 
+                          readOnly 
+                          className="encrypted-input"
+                        />
+                      </div>
+                    </>
+                  )}
                   {decryptedAddresses[index] && (
                     <div className="decrypted-value">
-                      <label>Decrypted:</label>
+                      <label>Multi-sig Address {index + 1}:</label>
                       <input 
                         type="text" 
                         value={decryptedAddresses[index]} 
