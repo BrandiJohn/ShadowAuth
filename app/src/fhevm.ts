@@ -11,8 +11,7 @@ export const initFhevm = async () => {
     
     // Create instance with network configuration
     const config = { 
-      ...SepoliaConfig, 
-      network: window.ethereum || 'https://sepolia.infura.io/v3/your-infura-key'
+      ...SepoliaConfig
     }
     
     fhevmInstance = await createInstance(config)

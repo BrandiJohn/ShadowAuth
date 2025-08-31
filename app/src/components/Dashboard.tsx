@@ -195,38 +195,40 @@ export default function Dashboard({ address }: Props) {
       <div className="action-card">
         <h4>Withdraw Funds</h4>
         
-        {!withdrawalRequest?.isPending ? (
-          <>
-            <div className="input-group">
-              <label htmlFor="withdraw-amount">Amount (ETH):</label>
-              <input
-                id="withdraw-amount"
-                type="number"
-                step="0.01"
-                placeholder="0.0"
-                value={withdrawAmount}
-                onChange={(e) => setWithdrawAmount(e.target.value)}
-                disabled={isWithdrawRequestPending || isWithdrawRequestConfirming}
-              />
-            </div>
-            <button
-              onClick={handleRequestWithdrawal}
-              disabled={
-                !withdrawAmount || 
-                parseFloat(withdrawAmount) <= 0 || 
-                isWithdrawRequestPending || 
-                isWithdrawRequestConfirming
-              }
-              className="action-button withdraw-button"
-            >
-              {isWithdrawRequestPending ? 'Confirming...' : 
-               isWithdrawRequestConfirming ? 'Processing...' : 
-               'Request Withdrawal'}
-            </button>
-          </>
-        ) : (
+        {/* Allow withdrawal requests at any time */}
+        <div className="withdrawal-request-form">
+          <div className="input-group">
+            <label htmlFor="withdraw-amount">Amount (ETH):</label>
+            <input
+              id="withdraw-amount"
+              type="number"
+              step="0.01"
+              placeholder="0.0"
+              value={withdrawAmount}
+              onChange={(e) => setWithdrawAmount(e.target.value)}
+              disabled={isWithdrawRequestPending || isWithdrawRequestConfirming}
+            />
+          </div>
+          <button
+            onClick={handleRequestWithdrawal}
+            disabled={
+              !withdrawAmount || 
+              parseFloat(withdrawAmount) <= 0 || 
+              isWithdrawRequestPending || 
+              isWithdrawRequestConfirming
+            }
+            className="action-button withdraw-button"
+          >
+            {isWithdrawRequestPending ? 'Confirming...' : 
+             isWithdrawRequestConfirming ? 'Processing...' : 
+             'Request Withdrawal'}
+          </button>
+        </div>
+        
+        {/* Show current withdrawal request status if exists */}
+        {withdrawalRequest?.isPending && (
           <div className="withdrawal-request-status">
-            <h5>Withdrawal Request Status</h5>
+            <h5>Current Withdrawal Request Status</h5>
             <p>Amount: {formatEther(withdrawalRequest.amount)} ETH</p>
             <p>Request ID: {withdrawalRequest.requestId.toString()}</p>
             

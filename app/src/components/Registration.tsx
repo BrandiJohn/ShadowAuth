@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount, useWalletClient } from 'wagmi'
-import { isAddress } from 'viem'
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount, useWalletClient, usePublicClient } from 'wagmi'
+import { isAddress, formatEther } from 'viem'
 import { getFhevmInstance } from '../fhevm'
 import { SHADOWAUTH_ADDRESS, SHADOWAUTH_ABI } from '../contract'
 
@@ -17,8 +17,11 @@ export default function Registration({ address, fhevmReady }: Props) {
   const [decryptedAddresses, setDecryptedAddresses] = useState<string[]>([])
   const [isDecrypting, setIsDecrypting] = useState(false)
   const [decryptError, setDecryptError] = useState<string | null>(null)
+  const [withdrawalLimits, setWithdrawalLimits] = useState<Array<{maxAmount: bigint, deadline: bigint, isSet: boolean}>>([])
+  const [isLoadingLimits, setIsLoadingLimits] = useState(false)
   
   const { data: walletClient } = useWalletClient();
+  const publicClient = usePublicClient();
 
   const { writeContract, data: hash, error, isPending } = useWriteContract()
 
@@ -143,6 +146,47 @@ export default function Registration({ address, fhevmReady }: Props) {
     }
   }
 
+  const fetchWithdrawalLimits = async (addresses: string[]) => {
+    try {
+      setIsLoadingLimits(true)
+      
+      if (!publicClient) {
+        console.error('Public client not available')
+        return
+      }
+      
+      // Use Promise.all to fetch all withdrawal limits concurrently
+      const limitPromises = addresses.map(async (address) => {
+        if (!isAddress(address)) {
+          return { maxAmount: BigInt(0), deadline: BigInt(0), isSet: false }
+        }
+        
+        try {
+          const result = await publicClient.readContract({
+            address: SHADOWAUTH_ADDRESS,
+            abi: SHADOWAUTH_ABI,
+            functionName: 'getWithdrawalLimit',
+            args: [address as `0x${string}`]
+          })
+          
+          const [maxAmount, deadline, isSet] = result as [bigint, bigint, boolean]
+          return { maxAmount, deadline, isSet }
+        } catch (error) {
+          console.error(`Failed to get withdrawal limit for ${address}:`, error)
+          return { maxAmount: BigInt(0), deadline: BigInt(0), isSet: false }
+        }
+      })
+      
+      const results = await Promise.all(limitPromises)
+      setWithdrawalLimits(results)
+    } catch (error) {
+      console.error('Failed to fetch withdrawal limits:', error)
+      setWithdrawalLimits(addresses.map(() => ({ maxAmount: BigInt(0), deadline: BigInt(0), isSet: false })))
+    } finally {
+      setIsLoadingLimits(false)
+    }
+  }
+
   const handleDecrypt = async () => {
     try {
       setIsDecrypting(true)
@@ -225,6 +269,9 @@ export default function Registration({ address, fhevmReady }: Props) {
       })
       setDecryptedAddresses(decryptedValues)
       
+      // Fetch withdrawal limits for all decrypted addresses
+      await fetchWithdrawalLimits(decryptedValues.filter(addr => addr !== 'Decryption failed'))
+      
     } catch (error) {
       console.error('Decryption error:', error)
       setDecryptError(error instanceof Error ? error.message : 'Decryption failed')
@@ -268,6 +315,25 @@ export default function Registration({ address, fhevmReady }: Props) {
                         readOnly 
                         className="decrypted-input"
                       />
+                      {withdrawalLimits[index] && (
+                        <div className="withdrawal-limit-info">
+                          <h5>Withdrawal Limit Status:</h5>
+                          {withdrawalLimits[index].isSet ? (
+                            <div className="limit-set">
+                              <p>✅ Limit Set</p>
+                              <p>Max Amount: {formatEther(withdrawalLimits[index].maxAmount)} ETH</p>
+                              <p>Deadline: {new Date(Number(withdrawalLimits[index].deadline) * 1000).toLocaleString()}</p>
+                              {Number(withdrawalLimits[index].deadline) > Date.now() / 1000 ? (
+                                <p className="status-active">🟢 Active</p>
+                              ) : (
+                                <p className="status-expired">🔴 Expired</p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="limit-not-set">❌ No withdrawal limit set</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -275,14 +341,21 @@ export default function Registration({ address, fhevmReady }: Props) {
               
               <button
                 onClick={handleDecrypt}
-                disabled={!fhevmReady || isDecrypting || encryptedAddresses.length !== 3}
+                disabled={!fhevmReady || isDecrypting || isLoadingLimits || encryptedAddresses.length !== 3}
                 className="decrypt-button"
               >
                 {!fhevmReady ? 'FHE Not Ready' :
                  isDecrypting ? 'Decrypting...' :
+                 isLoadingLimits ? 'Loading Withdrawal Limits...' :
                  decryptedAddresses.length > 0 ? 'Decrypt Again' :
                  'Decrypt Addresses'}
               </button>
+              
+              {isLoadingLimits && (
+                <div className="loading-message">
+                  Loading withdrawal limit settings...
+                </div>
+              )}
               
               {decryptError && (
                 <div className="error">
