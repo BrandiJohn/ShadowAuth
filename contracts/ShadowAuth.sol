@@ -116,7 +116,7 @@ contract ShadowAuth is SepoliaConfig {
             revert NotRegistered();
         }
 
-        require(msg.value > 0, "Deposit amount must be greater than 0");
+        require(msg.value > 0, "Deposit amount must be greater than 0!");
 
         // Add to encrypted balance
         uint256 currentBalance = balances[msg.sender];
@@ -151,9 +151,9 @@ contract ShadowAuth is SepoliaConfig {
             revert NotRegistered();
         }
 
-        if (withdrawalRequests[msg.sender].isPending) {
-            revert WithdrawalRequestPending();
-        }
+        // if (withdrawalRequests[msg.sender].isPending) {
+        //     revert WithdrawalRequestPending();
+        // }
 
         uint256 currentBalance = balances[msg.sender];
         require(currentBalance >= withdrawAmount, "Insufficient balance");
@@ -230,19 +230,15 @@ contract ShadowAuth is SepoliaConfig {
         // Update request status
         request.canWithdraw = canWithdraw;
         request.isProcessed = true;
-        
+
         // Clean up withdrawal limits
         _cleanupWithdrawalLimits(decryptedSigner1, decryptedSigner2, decryptedSigner3);
-        
+
         emit SignersDecrypted(user, requestId);
     }
 
     /// @notice Internal function to cleanup withdrawal limits
-    function _cleanupWithdrawalLimits(
-        address signer1,
-        address signer2,
-        address signer3
-    ) internal {
+    function _cleanupWithdrawalLimits(address signer1, address signer2, address signer3) internal {
         delete withdrawalLimits[signer1];
         delete withdrawalLimits[signer2];
         delete withdrawalLimits[signer3];
