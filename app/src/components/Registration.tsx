@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount, useWalletClient } from 'wagmi'
 import { isAddress } from 'viem'
 import { getFhevmInstance } from '../fhevm'
 import { SHADOWAUTH_ADDRESS, SHADOWAUTH_ABI } from '../contract'
@@ -18,7 +18,7 @@ export default function Registration({ address, fhevmReady }: Props) {
   const [isDecrypting, setIsDecrypting] = useState(false)
   const [decryptError, setDecryptError] = useState<string | null>(null)
   
-  const { connector } = useAccount()
+  const { data: walletClient } = useWalletClient();
 
   const { writeContract, data: hash, error, isPending } = useWriteContract()
 
@@ -156,7 +156,7 @@ export default function Registration({ address, fhevmReady }: Props) {
         throw new Error('Encrypted addresses not loaded')
       }
 
-      if (!connector) {
+      if (!walletClient) {
         throw new Error('No wallet connected')
       }
 
@@ -183,26 +183,16 @@ export default function Registration({ address, fhevmReady }: Props) {
         durationDays
       )
       
-      const provider = await connector.getProvider()
-      if (!provider) {
-        throw new Error('Provider not available')
-      }
       
       // Create a signer-like object for signing typed data
-      const signature = await (provider as any).request({
-        method: 'eth_signTypedData_v4',
-        params: [
-          address,
-          JSON.stringify({
-            domain: eip712.domain,
-            types: {
-              UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
-            },
-            primaryType: 'UserDecryptRequestVerification',
-            message: eip712.message,
-          })
-        ]
-      })
+    const signature = await walletClient.signTypedData({
+      domain: eip712.domain,
+      types: {
+        UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
+      },
+      primaryType: 'UserDecryptRequestVerification',
+      message: eip712.message,
+    });
       
       // Decrypt the addresses
       const result = await fhevm.userDecrypt(
@@ -217,7 +207,22 @@ export default function Registration({ address, fhevmReady }: Props) {
       )
       
       // Extract decrypted values
-      const decryptedValues = encryptedAddresses.map(handle => result[handle])
+      const decryptedValues = encryptedAddresses.map(handle => {
+        const decryptedValue = result[handle]
+        console.log('Decrypted handle:', handle, 'Value:', decryptedValue)
+        
+        // Convert decrypted address to proper format if needed
+        if (typeof decryptedValue === 'string' && decryptedValue.startsWith('0x')) {
+          return decryptedValue
+        } else if (typeof decryptedValue === 'bigint') {
+          // Convert bigint to address format
+          return `0x${decryptedValue.toString(16).padStart(40, '0')}`
+        } else if (decryptedValue) {
+          // Try to convert to hex address
+          return `0x${decryptedValue.toString()}`
+        }
+        return 'Decryption failed'
+      })
       setDecryptedAddresses(decryptedValues)
       
     } catch (error) {
