@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount, useWalletClient, usePublicClient } from 'wagmi'
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useWalletClient, usePublicClient } from 'wagmi'
 import { isAddress, formatEther } from 'viem'
 import { getFhevmInstance } from '../fhevm'
 import { SHADOWAUTH_ADDRESS, SHADOWAUTH_ABI } from '../contract'
